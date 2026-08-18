@@ -25,12 +25,13 @@ router.post("/create", requireAuth, async (req, res) => {
   try {
     const adminId = req.user.adminId;
 
-    const {
-      voucher_type,
-      voucher_date,
-      voucher_no,
-      party_name,
-      due_date,
+const {
+  voucher_type,
+  voucher_date,
+  voucher_no,
+  party_name,
+  new_party,
+  due_date,
       narration,
       ledger_entries,
       items,
@@ -120,8 +121,9 @@ const payload = {
   voucher_type,
   voucher_date,
   voucher_no: voucher_no || null,
-  party_name: party_name || null,
-  due_date: due_date || null,
+party_name: party_name || null,
+new_party: new_party || null,
+due_date: due_date || null,
   narration: narration || "",
   reference_no,
 
