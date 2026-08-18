@@ -593,65 +593,96 @@ router.get(
   requireInventoryPermission,
   async (req, res) => {
     try {
-      const result = await pool.query(
-        `
-        SELECT
-          item_guid,
-          name,
-          parent_group,
-          unit,
-          opening_qty,
-          opening_value,
-          hsn_code,
-          gst_rate,
-          cgst_rate,
-          sgst_rate,
-          igst_rate,
-          gst_applicable
-        FROM public.stock_items
-        WHERE admin_id = $1
-        ORDER BY name ASC
-        `,
-        [req.user.adminId]
-      );
+const result = await pool.query(
+  `
+  SELECT
+    si.item_guid,
+    si.name,
+    si.parent_group,
+    si.unit,
 
-      return res.json({
-        success: true,
-        items: result.rows.map(item => ({
-          item_guid: item.item_guid,
-          name: item.name,
-          group: item.parent_group,
-          unit: item.unit,
+    COALESCE(si.opening_qty, 0) AS opening_qty,
+    COALESCE(si.opening_value, 0) AS opening_value,
 
-          opening_qty: Number(item.opening_qty || 0),
-          opening_value: Number(item.opening_value || 0),
+    COALESCE(ss.closing_qty, 0) AS closing_qty,
+    COALESCE(ss.closing_value, 0) AS closing_value,
 
-          hsn_code: item.hsn_code || null,
+    CASE
+      WHEN COALESCE(ss.closing_qty, 0) <> 0
+      THEN ROUND(
+        COALESCE(ss.closing_value, 0) /
+        ss.closing_qty,
+        2
+      )
+      ELSE 0
+    END AS rate,
 
-          gst_rate:
-            item.gst_rate !== null
-              ? Number(item.gst_rate)
-              : null,
+    si.hsn_code,
+    si.gst_rate,
+    si.cgst_rate,
+    si.sgst_rate,
+    si.igst_rate,
+    si.gst_applicable
 
-          cgst_rate:
-            item.cgst_rate !== null
-              ? Number(item.cgst_rate)
-              : null,
+  FROM stock_items si
 
-          sgst_rate:
-            item.sgst_rate !== null
-              ? Number(item.sgst_rate)
-              : null,
+  LEFT JOIN stock_summary ss
+    ON ss.item_name = si.name
+    AND ss.company_guid = si.company_guid
+    AND ss.admin_id = si.admin_id
 
-          igst_rate:
-            item.igst_rate !== null
-              ? Number(item.igst_rate)
-              : null,
+  WHERE si.admin_id = $1
+    AND si.company_guid = (
+      SELECT company_guid
+      FROM active_company
+      WHERE admin_id = $1
+    )
 
-          gst_applicable:
-            item.gst_applicable || null
-        }))
-      });
+  ORDER BY si.name ASC
+  `,
+  [req.user.adminId]
+);
+
+return res.json({
+  success: true,
+  items: result.rows.map(item => ({
+    // Identity
+    item_guid: item.item_guid,
+    name: item.name,
+    group: item.parent_group,
+
+    // Stock
+    unit: item.unit,
+    opening_qty: Number(item.opening_qty || 0),
+    opening_value: Number(item.opening_value || 0),
+
+    closing_qty: Number(item.closing_qty || 0),
+    closing_value: Number(item.closing_value || 0),
+
+    // Calculated current rate
+    rate: Number(item.rate || 0),
+
+    // Tax
+    hsn_code: item.hsn_code || null,
+    gst_rate:
+      item.gst_rate !== null
+        ? Number(item.gst_rate)
+        : null,
+    cgst_rate:
+      item.cgst_rate !== null
+        ? Number(item.cgst_rate)
+        : null,
+    sgst_rate:
+      item.sgst_rate !== null
+        ? Number(item.sgst_rate)
+        : null,
+    igst_rate:
+      item.igst_rate !== null
+        ? Number(item.igst_rate)
+        : null,
+    gst_applicable: item.gst_applicable || null
+  }))
+});
 
     } catch (err) {
       console.error(
