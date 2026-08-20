@@ -276,7 +276,6 @@ WHERE v.admin_id = $1
     FROM active_company
     WHERE admin_id = $1
   )
-  AND v.is_active = true
 GROUP BY 
   v.voucher_guid,
   v.voucher_date,
@@ -317,7 +316,6 @@ params = [adminId];
         u.voucher_selection_permissions->'allowed_vouchers'
       )
     )
-    AND ve.is_active = true
   GROUP BY ve.voucher_guid, ve.voucher_date, ve.voucher_type
   ORDER BY ve.voucher_date DESC
 `;
