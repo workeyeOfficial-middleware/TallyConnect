@@ -157,4 +157,101 @@ router.post("/handshake", async (req, res) => {
   }
 });
 
+
+/* =====================================================
+   📋 AGENT INFO — Store Tally instance details
+===================================================== */
+router.post("/agent-info", async (req, res) => {
+  const {
+    person_name,
+    mobile_number,
+    company_name,
+    description,
+    facing_errors,
+    support_type,
+    tally_ticket_no,
+    tally_company,
+    tally_version,
+    tally_serial_no,
+    license_edition,
+    tss_valid_till,
+    account_id,
+    site_id,
+    license_admin,
+    tally_gateway,
+  } = req.body;
+
+  if (!tally_serial_no) {
+    return res.status(400).json({ message: "tally_serial_no is required" });
+  }
+
+  try {
+    const existing = await pool.query(
+      `SELECT id FROM agent_info WHERE tally_serial_no = $1`,
+      [tally_serial_no]
+    );
+
+    if (existing.rows.length) {
+      await pool.query(
+        `
+        UPDATE agent_info SET
+          person_name     = COALESCE($1,  person_name),
+          mobile_number   = COALESCE($2,  mobile_number),
+          company_name    = COALESCE($3,  company_name),
+          description     = COALESCE($4,  description),
+          facing_errors   = COALESCE($5,  facing_errors),
+          support_type    = COALESCE($6,  support_type),
+          tally_ticket_no = COALESCE($7,  tally_ticket_no),
+          tally_company   = COALESCE($8,  tally_company),
+          tally_version   = COALESCE($9,  tally_version),
+          license_edition = COALESCE($10, license_edition),
+          tss_valid_till  = COALESCE($11, tss_valid_till),
+          account_id      = COALESCE($12, account_id),
+          site_id         = COALESCE($13, site_id),
+          license_admin   = COALESCE($14, license_admin),
+          tally_gateway   = COALESCE($15, tally_gateway),
+          updated_at      = NOW()
+        WHERE tally_serial_no = $16
+        `,
+        [
+          person_name, mobile_number, company_name, description,
+          facing_errors, support_type, tally_ticket_no,
+          tally_company, tally_version, tally_serial_no,
+          license_edition, tss_valid_till || null,
+          account_id, site_id, license_admin,
+          tally_gateway, tally_serial_no,
+        ]
+      );
+
+      return res.json({ message: "Agent info updated", action: "updated" });
+    }
+
+    await pool.query(
+      `
+      INSERT INTO agent_info (
+        person_name, mobile_number, company_name, description,
+        facing_errors, support_type, tally_ticket_no,
+        tally_company, tally_version, tally_serial_no,
+        license_edition, tss_valid_till, account_id,
+        site_id, license_admin, tally_gateway
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+      `,
+      [
+        person_name, mobile_number, company_name, description,
+        facing_errors || "No", support_type, tally_ticket_no,
+        tally_company, tally_version, tally_serial_no,
+        license_edition, tss_valid_till || null,
+        account_id, site_id, license_admin,
+        tally_gateway,
+      ]
+    );
+
+    return res.json({ message: "Agent info stored", action: "created" });
+  } catch (err) {
+    console.error("Agent info error:", err.message);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+
 export default router;
