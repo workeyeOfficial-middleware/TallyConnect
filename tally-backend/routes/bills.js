@@ -294,24 +294,78 @@ router.get("/", requireAuth, async (req, res) => {
 // =====================================================
 // 🆕 GET BILLS BY LEDGER (READ-ONLY, SAFE)
 // =====================================================
+// router.get("/ledger/:ledgerGuid", requireAuth, async (req, res) => {
+//   try {
+//     const { ledgerGuid } = req.params;
+//     const { role, id: userId, adminId } = req.user;
+
+//     // 🔒 USER permission check (same pattern everywhere)
+//     if (role !== "ADMIN") {
+//       const check = await pool.query(
+//         `
+//        SELECT 1
+// FROM user_ledger_permissions ulp
+// JOIN ledgers l ON l.ledger_guid = ulp.ledger_guid
+// WHERE ulp.user_id = $1
+//   AND ulp.ledger_guid = $2
+//   AND l.admin_id = $3
+
+//         `,
+// [userId, ledgerGuid, adminId]
+//       );
+
+//       if (check.rowCount === 0) {
+//         return res.status(403).json({ message: "Access denied" });
+//       }
+//     }
+
+//    const { rows } = await pool.query(
+//   `
+//   SELECT
+//     bill_name,
+//     ledger_name,
+//     due_date,
+//     pending_amount
+//  FROM bills
+// WHERE ledger_guid = $1
+//   AND admin_id = $2
+//   AND company_guid = (
+//     SELECT company_guid
+//     FROM active_company
+//     WHERE admin_id = $2
+//   )
+
+//   ORDER BY due_date ASC
+//   `,
+//   [ledgerGuid, adminId]
+// );
+
+
+//     res.json(rows);
+//   } catch (err) {
+//     console.error("Ledger bills fetch error:", err);
+//     res.status(500).json({ message: "Failed to fetch bills" });
+//   }
+// });
+
+
+// New
 router.get("/ledger/:ledgerGuid", requireAuth, async (req, res) => {
   try {
     const { ledgerGuid } = req.params;
     const { role, id: userId, adminId } = req.user;
 
-    // 🔒 USER permission check (same pattern everywhere)
     if (role !== "ADMIN") {
       const check = await pool.query(
         `
-       SELECT 1
-FROM user_ledger_permissions ulp
-JOIN ledgers l ON l.ledger_guid = ulp.ledger_guid
-WHERE ulp.user_id = $1
-  AND ulp.ledger_guid = $2
-  AND l.admin_id = $3
-
+        SELECT 1
+        FROM user_ledger_permissions ulp
+        JOIN ledgers l ON l.ledger_guid = ulp.ledger_guid
+        WHERE ulp.user_id = $1
+          AND ulp.ledger_guid = $2
+          AND l.admin_id = $3
         `,
-[userId, ledgerGuid, adminId]
+        [userId, ledgerGuid, adminId]
       );
 
       if (check.rowCount === 0) {
@@ -319,34 +373,62 @@ WHERE ulp.user_id = $1
       }
     }
 
-   const { rows } = await pool.query(
-  `
-  SELECT
-    bill_name,
-    ledger_name,
-    due_date,
-    pending_amount
- FROM bills
-WHERE ledger_guid = $1
-  AND admin_id = $2
-  AND company_guid = (
-    SELECT company_guid
-    FROM active_company
-    WHERE admin_id = $2
-  )
+    const ledgerRes = await pool.query(
+      `SELECT name FROM ledgers WHERE ledger_guid = $1 AND admin_id = $2 LIMIT 1`,
+      [ledgerGuid, adminId]
+    );
+    if (!ledgerRes.rowCount) {
+      return res.status(404).json({ message: "Ledger not found" });
+    }
+    const ledgerName = ledgerRes.rows[0].name;
 
-  ORDER BY due_date ASC
-  `,
-  [ledgerGuid, adminId]
-);
+    const companyRes = await pool.query(
+      `SELECT company_guid FROM active_company WHERE admin_id = $1 LIMIT 1`,
+      [adminId]
+    );
+    const companyGuid = companyRes.rows[0]?.company_guid || null;
 
+    const { rows } = await pool.query(
+      `
+      SELECT bill_name, ledger_name, due_date, pending_amount
+      FROM bills
+      WHERE ledger_guid = $1
+        AND admin_id = $2
+        AND company_guid = $3
+      ORDER BY due_date ASC
+      `,
+      [ledgerGuid, adminId, companyGuid]
+    );
 
-    res.json(rows);
+    let itemRows = [];
+    if (companyGuid) {
+      const itemRes = await pool.query(
+        `
+        SELECT voucher_no, item_name,
+               SUM(quantity) AS total_qty,
+               SUM(amount)   AS total_amount
+        FROM ledger_items
+        WHERE admin_id = $1 AND company_guid = $2 AND ledger_name = $3
+        GROUP BY voucher_no, item_name
+        `,
+        [adminId, companyGuid, ledgerName]
+      );
+      itemRows = itemRes.rows;
+    }
+
+    const data = rows.map((b) => ({
+      ...b,
+      items: itemRows.filter((i) => i.voucher_no && i.voucher_no === b.bill_name)
+    }));
+
+    res.json(data);
   } catch (err) {
     console.error("Ledger bills fetch error:", err);
     res.status(500).json({ message: "Failed to fetch bills" });
   }
 });
+
+
 
 router.post("/mark-processing", requireAuth, async (req, res) => {
   const { bill_name, company_guid } = req.body;

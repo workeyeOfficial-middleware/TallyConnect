@@ -467,6 +467,80 @@ router.post("/user-vouchers", requireAuth, async (req, res) => {
 /* =====================================================
    GET VOUCHERS BY LEDGER (Ledger Details Page)
 ===================================================== */
+// router.get("/ledger/:ledgerGuid", requireAuth, async (req, res) => {
+
+//   const { ledgerGuid } = req.params;
+//   const adminId = req.user.adminId;
+//   const role = req.user.role;
+//   const userId = req.user.id;
+
+//   try {
+//     /* =========================
+//        🔐 Permission Check
+//     ========================== */
+//     if (role !== "ADMIN") {
+//       const check = await pool.query(
+//         `
+//         SELECT 1
+//         FROM user_ledger_permissions ulp
+//         JOIN ledgers l
+//           ON l.ledger_guid = ulp.ledger_guid
+//         WHERE ulp.user_id = $1
+//           AND ulp.ledger_guid = $2
+//           AND l.admin_id = $3
+//         `,
+//         [userId, ledgerGuid, adminId]
+//       );
+
+//       if (check.rowCount === 0) {
+//         return res.status(403).json({ message: "Access denied" });
+//       }
+//     }
+
+//     /* =========================
+//        🎯 Fetch Only That Ledger's Entries
+//     ========================== */
+//     const result = await pool.query(
+//       `
+//       SELECT
+//   ve.voucher_guid AS id,
+//   MAX(ve.voucher_date) AS voucher_date,
+//   MAX(ve.voucher_type) AS voucher_type,
+//   MAX(ve.reference_no) AS reference_no,
+
+//   SUM(CASE WHEN ve.is_debit THEN ve.amount ELSE 0 END) AS debit,
+//   SUM(CASE WHEN NOT ve.is_debit THEN ve.amount ELSE 0 END) AS credit
+
+// FROM voucher_entries ve
+// JOIN ledgers l
+//   ON l.ledger_guid = $1
+//  AND l.admin_id = $2
+//  AND l.company_guid = ve.company_guid
+//  AND ve.ledger_name = l.name
+
+// WHERE ve.is_active = true
+//   AND ve.company_guid = (
+//     SELECT company_guid
+//     FROM active_company
+//     WHERE admin_id = $2
+//   )
+
+// GROUP BY ve.voucher_guid
+// ORDER BY MAX(ve.voucher_date) ASC
+//       `,
+//       [ledgerGuid, adminId]
+//     );
+
+//     res.json(result.rows);
+
+//   } catch (err) {
+//     console.error("Ledger vouchers fetch error:", err);
+//     res.status(500).json({ message: "Failed to fetch ledger vouchers" });
+//   }
+// });
+
+
+// New
 router.get("/ledger/:ledgerGuid", requireAuth, async (req, res) => {
 
   const { ledgerGuid } = req.params;
@@ -475,9 +549,7 @@ router.get("/ledger/:ledgerGuid", requireAuth, async (req, res) => {
   const userId = req.user.id;
 
   try {
-    /* =========================
-       🔐 Permission Check
-    ========================== */
+    /* 🔐 Permission Check (unchanged) */
     if (role !== "ADMIN") {
       const check = await pool.query(
         `
@@ -497,47 +569,69 @@ router.get("/ledger/:ledgerGuid", requireAuth, async (req, res) => {
       }
     }
 
-    /* =========================
-       🎯 Fetch Only That Ledger's Entries
-    ========================== */
+    /* 🎯 Fetch Only That Ledger's Entries (unchanged query) */
     const result = await pool.query(
       `
       SELECT
-  ve.voucher_guid AS id,
-  MAX(ve.voucher_date) AS voucher_date,
-  MAX(ve.voucher_type) AS voucher_type,
-  MAX(ve.reference_no) AS reference_no,
-
-  SUM(CASE WHEN ve.is_debit THEN ve.amount ELSE 0 END) AS debit,
-  SUM(CASE WHEN NOT ve.is_debit THEN ve.amount ELSE 0 END) AS credit
-
-FROM voucher_entries ve
-JOIN ledgers l
-  ON l.ledger_guid = $1
- AND l.admin_id = $2
- AND l.company_guid = ve.company_guid
- AND ve.ledger_name = l.name
-
-WHERE ve.is_active = true
-  AND ve.company_guid = (
-    SELECT company_guid
-    FROM active_company
-    WHERE admin_id = $2
-  )
-
-GROUP BY ve.voucher_guid
-ORDER BY MAX(ve.voucher_date) ASC
+        ve.voucher_guid AS id,
+        MAX(ve.voucher_date) AS voucher_date,
+        MAX(ve.voucher_type) AS voucher_type,
+        MAX(ve.reference_no) AS reference_no,
+        SUM(CASE WHEN ve.is_debit THEN ve.amount ELSE 0 END) AS debit,
+        SUM(CASE WHEN NOT ve.is_debit THEN ve.amount ELSE 0 END) AS credit
+      FROM voucher_entries ve
+      JOIN ledgers l
+        ON l.ledger_guid = $1
+       AND l.admin_id = $2
+       AND l.company_guid = ve.company_guid
+       AND ve.ledger_name = l.name
+      WHERE ve.is_active = true
+        AND ve.company_guid = (
+          SELECT company_guid
+          FROM active_company
+          WHERE admin_id = $2
+        )
+      GROUP BY ve.voucher_guid
+      ORDER BY MAX(ve.voucher_date) ASC
       `,
       [ledgerGuid, adminId]
     );
 
-    res.json(result.rows);
+    /* 🆕 Attach items per voucher (exact join on voucher_guid) */
+    let itemRows = [];
+    const voucherGuids = result.rows.map((r) => r.id);
+
+    if (voucherGuids.length > 0) {
+      const itemRes = await pool.query(
+        `
+        SELECT
+          voucher_guid,
+          item_name,
+          SUM(quantity) AS total_qty,
+          SUM(amount)   AS total_amount
+        FROM ledger_items
+        WHERE admin_id = $1
+          AND voucher_guid = ANY($2)
+        GROUP BY voucher_guid, item_name
+        `,
+        [adminId, voucherGuids]
+      );
+      itemRows = itemRes.rows;
+    }
+
+    const data = result.rows.map((v) => ({
+      ...v,
+      items: itemRows.filter((i) => i.voucher_guid === v.id)
+    }));
+
+    res.json(data);
 
   } catch (err) {
     console.error("Ledger vouchers fetch error:", err);
     res.status(500).json({ message: "Failed to fetch ledger vouchers" });
   }
 });
+
 
 router.post("/bulk-user-vouchers", requireAuth, async (req, res) => {
   const { userIds, vouchers } = req.body;

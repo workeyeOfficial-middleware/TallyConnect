@@ -43,6 +43,8 @@ import userRequestsRouter from "./routes/userRequestsforAccess.js";
 import entryFieldSettingsRoutes from "./routes/entryFieldSettings.js";
 import mobileVoucherCommand from "./routes/UniversalUpdate/mobileVoucherCommand.js";
 import mobileSyncQueueRoutes from "./routes/mobileSyncQueueRoutes.js";
+import ledgerItemRoutes from "./routes/ledgerItems.js";
+
 console.log("🔥 SERVER STARTED WITH AGENT-STATUS ROUTE");
 
 const app = express();
@@ -134,6 +136,7 @@ app.use("/notify-permission-update", notifyPermissionUpdate);
 app.use("/", requireAuth, userRequestsRouter);
 app.use("/api/mobile-voucher-command", mobileVoucherCommand);
 app.use("/api/mobile-sync-queue", mobileSyncQueueRoutes);
+app.use("/ledger-items", ledgerItemRoutes);
 
 app.use(
   "/entry-field-settings",
