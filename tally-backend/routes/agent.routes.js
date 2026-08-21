@@ -158,9 +158,8 @@ router.post("/handshake", async (req, res) => {
 });
 
 
-/* =====================================================
-   📋 AGENT INFO — Store Tally instance details
-===================================================== */
+// Agent info sent to backend
+
 router.post("/agent-info", async (req, res) => {
   const {
     person_name,
@@ -187,8 +186,8 @@ router.post("/agent-info", async (req, res) => {
 
   try {
     const existing = await pool.query(
-      `SELECT id FROM agent_info WHERE tally_serial_no = $1`,
-      [tally_serial_no]
+      `SELECT id FROM agent_info WHERE tally_serial_no = $1 AND account_id = $2`,
+      [tally_serial_no, account_id]
     );
 
     if (existing.rows.length) {
@@ -211,15 +210,14 @@ router.post("/agent-info", async (req, res) => {
           license_admin   = COALESCE($14, license_admin),
           tally_gateway   = COALESCE($15, tally_gateway),
           updated_at      = NOW()
-        WHERE tally_serial_no = $16
+        WHERE tally_serial_no = $16 AND account_id = $17
         `,
         [
           person_name, mobile_number, company_name, description,
           facing_errors, support_type, tally_ticket_no,
-          tally_company, tally_version, tally_serial_no,
-          license_edition, tss_valid_till || null,
-          account_id, site_id, license_admin,
-          tally_gateway, tally_serial_no,
+          tally_company, tally_version, license_edition,
+          tss_valid_till || null, account_id, site_id,
+          license_admin, tally_gateway, tally_serial_no, account_id,
         ]
       );
 
