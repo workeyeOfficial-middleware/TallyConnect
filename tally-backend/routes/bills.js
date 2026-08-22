@@ -448,6 +448,30 @@ router.get("/ledger/:ledgerGuid", requireAuth, async (req, res) => {
   }
 });
 
+// error is coming that's why added this route
+router.post("/ensure-voucher-bill-map", requireAuth, async (req, res) => {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS voucher_bill_map (
+        id SERIAL PRIMARY KEY,
+        admin_id INT NOT NULL,
+        company_guid UUID NOT NULL,
+        voucher_guid UUID NOT NULL,
+        bill_ref TEXT NOT NULL,
+        bill_type TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE (company_guid, voucher_guid, bill_ref)
+      )
+    `);
+    const { rows } = await pool.query(
+      `SELECT table_schema FROM information_schema.tables WHERE table_name = 'voucher_bill_map'`
+    );
+    res.json({ success: true, found_in_schemas: rows.map(r => r.table_schema) });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 
 
 router.post("/mark-processing", requireAuth, async (req, res) => {
