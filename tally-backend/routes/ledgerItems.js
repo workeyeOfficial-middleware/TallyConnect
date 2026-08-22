@@ -235,4 +235,54 @@ router.get("/ledger/:ledgerGuid", requireAuth, async (req, res) => {
   }
 });
 
+/**
+ * GET /ledger-items/item/:itemName/parties?type=Sales|Purchase
+ * Parties who bought/sold a specific item
+ */
+router.get("/item/:itemName/parties", requireAuth, async (req, res) => {
+  try {
+    const { itemName } = req.params;
+    const { type } = req.query;
+    const adminId = req.user.adminId;
+
+    const companyRes = await pool.query(
+      `SELECT company_guid FROM active_company WHERE admin_id = $1 LIMIT 1`,
+      [adminId]
+    );
+    const companyGuid = companyRes.rows[0]?.company_guid || null;
+    if (!companyGuid) return res.json([]);
+
+    const params = [adminId, companyGuid, itemName];
+    let typeFilter = "";
+    if (type === "Sales" || type === "Purchase") {
+      typeFilter = `AND li.voucher_type = $4`;
+      params.push(type);
+    }
+
+    const { rows } = await pool.query(
+      `
+      SELECT
+        li.ledger_name                    AS party_name,
+        SUM(li.quantity)                  AS total_qty,
+        SUM(li.amount)                    AS total_amount,
+        COUNT(DISTINCT li.voucher_no)     AS invoices,
+        MAX(li.voucher_date)              AS last_date
+      FROM ledger_items li
+      WHERE li.admin_id   = $1
+        AND li.company_guid = $2
+        AND LOWER(li.item_name) = LOWER($3)
+        ${typeFilter}
+      GROUP BY li.ledger_name
+      ORDER BY SUM(li.amount) DESC
+      `,
+      params
+    );
+
+    res.json(rows);
+  } catch (err) {
+    console.error("item parties fetch error:", err);
+    res.status(500).json({ message: "Failed to fetch item parties" });
+  }
+});
+
 export default router;
