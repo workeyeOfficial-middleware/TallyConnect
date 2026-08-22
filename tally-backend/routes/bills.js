@@ -401,25 +401,45 @@ router.get("/ledger/:ledgerGuid", requireAuth, async (req, res) => {
     );
 
     let itemRows = [];
+    let mapRows = [];
     if (companyGuid) {
       const itemRes = await pool.query(
         `
-        SELECT voucher_no, item_name,
+        SELECT voucher_guid, voucher_no, item_name,
                SUM(quantity) AS total_qty,
                SUM(amount)   AS total_amount
         FROM ledger_items
         WHERE admin_id = $1 AND company_guid = $2 AND ledger_name = $3
-        GROUP BY voucher_no, item_name
+        GROUP BY voucher_guid, voucher_no, item_name
         `,
         [adminId, companyGuid, ledgerName]
       );
       itemRows = itemRes.rows;
+
+      const mapRes = await pool.query(
+        `
+        SELECT voucher_guid, bill_ref
+        FROM voucher_bill_map
+        WHERE company_guid = $1
+        `,
+        [companyGuid]
+      );
+      mapRows = mapRes.rows;
     }
 
-    const data = rows.map((b) => ({
-      ...b,
-      items: itemRows.filter((i) => i.voucher_no && i.voucher_no === b.bill_name)
-    }));
+    const data = rows.map((b) => {
+      const guids = new Set(
+        mapRows
+          .filter((m) => m.bill_ref === b.bill_name)
+          .map((m) => m.voucher_guid)
+      );
+      const matched = itemRows.filter(
+        (i) =>
+          (i.voucher_guid && guids.has(i.voucher_guid)) ||
+          (!guids.size && i.voucher_no && i.voucher_no === b.bill_name)
+      );
+      return { ...b, items: matched };
+    });
 
     res.json(data);
   } catch (err) {

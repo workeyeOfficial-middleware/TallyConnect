@@ -8,6 +8,80 @@ const router = express.Router();
  * POST /ledger-items/sync
  * Used by Tally Agent
  */
+// router.post("/sync", requireAuth, async (req, res) => {
+//   try {
+//     const {
+//       company_guid,
+//       voucher_guid,
+//       voucher_no,
+//       voucher_date,
+//       voucher_type,
+//       ledger_name,
+//       item_name,
+//       quantity,
+//       rate,
+//       amount
+//     } = req.body;
+
+//     if (
+//       !company_guid ||
+//       !voucher_guid ||
+//       !ledger_name ||
+//       !item_name ||
+//       !ledger_name.trim() ||
+//       !item_name.trim()
+//     ) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "company_guid, voucher_guid, ledger_name, item_name required"
+//       });
+//     }
+
+//     const num = (v) => (typeof v === "number" && !isNaN(v) ? v : 0);
+
+//     await pool.query(
+//       `
+//       INSERT INTO ledger_items (
+//         admin_id, company_guid, voucher_guid, voucher_no, voucher_date,
+//         voucher_type, ledger_name, item_name, quantity, rate, amount
+//       )
+//       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+//       ON CONFLICT (admin_id, company_guid, voucher_guid, item_name)
+//       DO UPDATE SET
+//         voucher_no   = EXCLUDED.voucher_no,
+//         voucher_date = EXCLUDED.voucher_date,
+//         voucher_type = EXCLUDED.voucher_type,
+//         ledger_name  = EXCLUDED.ledger_name,
+//         quantity     = EXCLUDED.quantity,
+//         rate         = EXCLUDED.rate,
+//         amount       = EXCLUDED.amount,
+//         updated_at   = NOW()
+//       `,
+//       [
+//         req.user.adminId,
+//         company_guid,
+//         voucher_guid,
+//         voucher_no || null,
+//         voucher_date || null,
+//         voucher_type || null,
+//         ledger_name.trim(),
+//         item_name.trim(),
+//         num(quantity),
+//         num(rate),
+//         num(amount)
+//       ]
+//     );
+
+//     res.json({ success: true });
+//   } catch (err) {
+//     console.error("❌ ledger-items/sync error:", err);
+//     res.status(500).json({ success: false, error: err.message });
+//   }
+// });
+
+
+// Newwww
+
 router.post("/sync", requireAuth, async (req, res) => {
   try {
     const {
@@ -20,7 +94,8 @@ router.post("/sync", requireAuth, async (req, res) => {
       item_name,
       quantity,
       rate,
-      amount
+      amount,
+      bill_refs
     } = req.body;
 
     if (
@@ -72,12 +147,34 @@ router.post("/sync", requireAuth, async (req, res) => {
       ]
     );
 
+    if (Array.isArray(bill_refs) && bill_refs.length > 0) {
+      for (const b of bill_refs) {
+        if (!b || !b.bill_ref) continue;
+        await pool.query(
+          `
+          INSERT INTO voucher_bill_map
+            (admin_id, company_guid, voucher_guid, bill_ref, bill_type)
+          VALUES ($1, $2, $3, $4, $5)
+          ON CONFLICT (company_guid, voucher_guid, bill_ref) DO NOTHING
+          `,
+          [
+            req.user.adminId,
+            company_guid,
+            voucher_guid,
+            String(b.bill_ref),
+            b.bill_type || null
+          ]
+        );
+      }
+    }
+
     res.json({ success: true });
   } catch (err) {
     console.error("❌ ledger-items/sync error:", err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
 
 /**
  * GET /ledger-items/ledger/:ledgerGuid
