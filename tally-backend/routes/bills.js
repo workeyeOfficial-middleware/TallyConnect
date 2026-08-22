@@ -444,7 +444,7 @@ router.get("/ledger/:ledgerGuid", requireAuth, async (req, res) => {
     res.json(data);
   } catch (err) {
     console.error("Ledger bills fetch error:", err);
-    res.status(500).json({ message: "Failed to fetch bills" });
+    res.status(500).json({ message: "Failed to fetch bills", error: err.message });
   }
 });
 
