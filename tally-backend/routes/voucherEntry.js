@@ -296,6 +296,7 @@ WHERE v.admin_id = $1
   )
 GROUP BY 
   v.voucher_guid,
+  v.company_guid,  
   v.voucher_date,
   v.voucher_type,
   v.reference_no,
