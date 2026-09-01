@@ -259,6 +259,7 @@ router.get("/", requireAuth, async (req, res) => {
      query = `
 SELECT
   v.voucher_guid,
+  v.company_guid, 
   v.voucher_date,
   v.voucher_type,
   v.reference_no,
@@ -351,7 +352,7 @@ params = [adminId];
         u.voucher_selection_permissions->'allowed_vouchers'
       )
     )
-  GROUP BY ve.voucher_guid, ve.voucher_date, ve.voucher_type
+  GROUP BY ve.voucher_guid, ve.company_guid, ve.voucher_date, ve.voucher_type
   ORDER BY ve.voucher_date DESC
 `;
 params = [userId];
