@@ -25,14 +25,29 @@ router.get("/", requireAuth, async (req, res) => {
       o.party_name AS customer,
       o.amount,
       o.due_date,
-      o.status
+      o.status,
+      COALESCE(
+        json_agg(
+          json_build_object(
+            'item_name', li.item_name,
+            'quantity', li.quantity,
+            'rate', li.rate,
+            'amount', li.amount
+          )
+        ) FILTER (WHERE li.item_name IS NOT NULL),
+        '[]'
+      ) AS items
 
         FROM orders o
+        LEFT JOIN ledger_items li
+          ON li.company_guid = o.company_guid
+         AND li.voucher_guid = o.order_guid
         WHERE o.company_guid = (
           SELECT ac.company_guid
           FROM active_company ac
           WHERE ac.admin_id = $1
         )
+        GROUP BY o.id
         ORDER BY o.order_date DESC
       `;
       params = [adminId];
@@ -46,10 +61,24 @@ router.get("/", requireAuth, async (req, res) => {
       o.party_name AS customer,
       o.amount,
       o.due_date,
-      o.status
+      o.status,
+      COALESCE(
+        json_agg(
+          json_build_object(
+            'item_name', li.item_name,
+            'quantity', li.quantity,
+            'rate', li.rate,
+            'amount', li.amount
+          )
+        ) FILTER (WHERE li.item_name IS NOT NULL),
+        '[]'
+      ) AS items
 
         FROM orders o
         JOIN users u ON u.id = $1
+        LEFT JOIN ledger_items li
+          ON li.company_guid = o.company_guid
+         AND li.voucher_guid = o.order_guid
         WHERE
           o.company_guid = (
             SELECT ac.company_guid
@@ -61,6 +90,7 @@ router.get("/", requireAuth, async (req, res) => {
               u.order_selection_permissions->'allowed_orders'
             )
           )
+       GROUP BY o.id
         ORDER BY o.order_date DESC
       `;
       params = [userId];
