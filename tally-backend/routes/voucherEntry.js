@@ -59,6 +59,7 @@ router.post("/sync", requireAuth, async (req, res) => {
     voucher_type,
     reference_no,
     net_amount,        // ✅ MUST ADD THIS
+    party_name, 
     entries,
   } = req.body;
 
@@ -93,7 +94,7 @@ if (companyCheck.rowCount === 0) {
     /* ==============================
        1️⃣ UPSERT INTO vouchers
     ============================== */
-    await client.query(
+await client.query(
       `
       INSERT INTO vouchers (
         admin_id,
@@ -103,15 +104,17 @@ if (companyCheck.rowCount === 0) {
         voucher_date,
         reference_no,
         net_amount,
+        party_name,
         is_active
       )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,true)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,true)
       ON CONFLICT (admin_id, company_guid, voucher_guid)
       DO UPDATE SET
         voucher_type = EXCLUDED.voucher_type,
         voucher_date = EXCLUDED.voucher_date,
         reference_no = EXCLUDED.reference_no,
         net_amount = EXCLUDED.net_amount,
+        party_name = EXCLUDED.party_name,
         is_active = true
       `,
       [
@@ -121,7 +124,9 @@ if (companyCheck.rowCount === 0) {
         voucher_type,
         voucher_date,
         reference_no,
-        net_amount || 0
+        net_amount || 0,
+        party_name || null
+
       ]
     );
 
@@ -265,7 +270,7 @@ SELECT
   v.reference_no,
   v.net_amount AS amount,
   v.is_active,
-  MAX(CASE WHEN ve.is_debit = false THEN ve.ledger_name END) AS party_name,
+  COALESCE(NULLIF(v.party_name,''), MAX(CASE WHEN ve.is_debit = false THEN ve.ledger_name END)) AS party_name,
   COALESCE(
     (
       SELECT jsonb_agg(
@@ -300,6 +305,7 @@ GROUP BY
   v.voucher_date,
   v.voucher_type,
   v.reference_no,
+  v.party_name,
   v.net_amount,
   v.is_active
 ORDER BY v.voucher_date DESC
