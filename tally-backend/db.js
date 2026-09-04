@@ -34,12 +34,12 @@ import pkg from "pg";
 const { Pool } = pkg;
 
 const dbUrl = process.env.DATABASE_URL || "postgresql://postgres:crm%40123@localhost:5433/Tally12";
-const isLocalhost = dbUrl.includes("localhost");
+const isLocalhost = dbUrl.includes("localhost") || dbUrl.includes("postgres");
 const pool = new Pool({
   connectionString: dbUrl,
-  ssl: isLocalhost ? false : {
+  ssl: process.env.DB_SSL === "true" ? {
     rejectUnauthorized: false
-  }
+  } : false
 });
 
 export default pool;
