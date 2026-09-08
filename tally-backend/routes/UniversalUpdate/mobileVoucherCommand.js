@@ -221,7 +221,7 @@ due_date: due_date || null,
     await createNotification({
       type: "VOUCHER_CREATED",
       message: `Mobile ${voucher_type} voucher queued successfully`,
-      user_id: req.user.id
+      user_id: adminId
     });
 
     return res.json({
@@ -497,7 +497,7 @@ const deposit_account =
       type: "VOUCHER_CREATED",
       message:
         "Mobile Receipt voucher queued successfully",
-      user_id: req.user.id
+      user_id: adminId
     });
 
     // -----------------------------------------
@@ -761,7 +761,7 @@ router.post("/payment/create", requireAuth, async (req, res) => {
       type: "VOUCHER_CREATED",
       message:
         "Mobile Payment voucher queued successfully",
-      user_id: req.user.id
+      user_id: adminId
     });
 
     // -----------------------------------------
@@ -1069,7 +1069,7 @@ router.post("/journal/create", requireAuth, async (req, res) => {
       type: "VOUCHER_CREATED",
       message:
         "Mobile Journal voucher queued successfully",
-      user_id: req.user.id
+      user_id: adminId
     });
 
     // -----------------------------------------
