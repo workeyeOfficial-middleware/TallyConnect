@@ -43,9 +43,13 @@ export async function ensureMobileSchema() {
       title TEXT,
       message TEXT,
       file TEXT,
+      meta JSONB,
       is_read BOOLEAN NOT NULL DEFAULT FALSE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
+  `);
+  await pool.query(`
+    ALTER TABLE mobile_notifications ADD COLUMN IF NOT EXISTS meta JSONB
   `);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS mobile_notification_preferences (
@@ -93,22 +97,22 @@ export async function saveMobilePrefs(userId, incoming) {
 }
 
 // Create a mobile notification for ONE user (respects their mobile config)
-export async function createMobileNotification({ type, title, message, user_id, file = null }) {
+export async function createMobileNotification({ type, title, message, user_id, file = null, meta = null }) {
   const prefs = await getMobilePrefs(user_id);
   const enabled = prefs[type] ?? MOBILE_NOTIFICATION_DEFAULTS[type] ?? false;
   if (!enabled) return { inserted: false };
 
   const { rows } = await pool.query(
-    `INSERT INTO mobile_notifications (user_id, type, title, message, file)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO mobile_notifications (user_id, type, title, message, file, meta)
+     VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING id`,
-    [user_id, type, title || TITLE_BY_TYPE[type] || "Notification", message, file]
+    [user_id, type, title || TITLE_BY_TYPE[type] || "Notification", message, file, meta]
   );
   return { inserted: true, id: rows[0].id };
 }
 
 // Create for the admin AND every user under that admin who enabled this type.
-export async function createMobileNotificationForAdmin({ type, title, message, adminId, file = null }) {
+export async function createMobileNotificationForAdmin({ type, title, message, adminId, file = null, meta = null }) {
   const { rows } = await pool.query(
     `SELECT id FROM users WHERE admin_id = $1`,
     [adminId]
@@ -118,6 +122,6 @@ export async function createMobileNotificationForAdmin({ type, title, message, a
   recipients.add(adminId);
 
   for (const userId of recipients) {
-    await createMobileNotification({ type, title, message, user_id: userId, file });
+    await createMobileNotification({ type, title, message, user_id: userId, file, meta });
   }
 }

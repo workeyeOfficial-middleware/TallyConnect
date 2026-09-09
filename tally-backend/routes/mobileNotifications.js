@@ -20,7 +20,7 @@ router.get("/", requireAuth, async (req, res) => {
     const prefs = await getMobilePrefs(userId);
 
     const result = await pool.query(
-      `SELECT id, type, title, message, file, is_read, created_at
+      `SELECT id, type, title, message, file, meta, is_read, created_at
        FROM mobile_notifications
        WHERE user_id = $1
        ORDER BY created_at DESC
@@ -30,15 +30,23 @@ router.get("/", requireAuth, async (req, res) => {
 
     const notifications = result.rows
       .filter((n) => prefs[n.type] === true)
-      .map((n) => ({
-        id: n.id,
-        title: n.title || TITLE_BY_TYPE[n.type] || "Notification",
-        message: n.message || "",
-        is_read: Boolean(n.is_read),
-        created_at: n.created_at,
-        type: n.type,
-        file: n.file || null,
-      }));
+      .map((n) => {
+        const meta = n.meta || null;
+        return {
+          id: n.id,
+          title: n.title || TITLE_BY_TYPE[n.type] || "Notification",
+          message: n.message || "",
+          is_read: Boolean(n.is_read),
+          created_at: n.created_at,
+          type: n.type,
+          file: n.file || null,
+          meta,
+          deep_link:
+            meta?.voucher_guid
+              ? `activity?voucher_guid=${encodeURIComponent(meta.voucher_guid)}&company_guid=${meta.company_guid ? encodeURIComponent(meta.company_guid) : ""}`
+              : null,
+        };
+      });
 
     res.json({ success: true, notifications });
   } catch (err) {

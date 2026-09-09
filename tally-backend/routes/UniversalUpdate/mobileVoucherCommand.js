@@ -227,8 +227,17 @@ due_date: due_date || null,
 
     createMobileNotificationForAdmin({
       type: "create_entry",
-      message: `Mobile ${voucher_type} voucher queued for Tally sync`,
-      adminId
+      message: `${voucher_type} | ₹${totalAmount} | ${party_name || "-"} | queued for Tally sync`,
+      adminId,
+      meta: {
+        voucher_guid,
+        company_guid,
+        voucher_type,
+        reference_no,
+        voucher_date,
+        party_name: party_name || null,
+        amount: totalAmount
+      }
     }).catch((e) => console.error("mobile create_entry notify error:", e.message));
 
     return res.json({
@@ -509,8 +518,17 @@ const deposit_account =
 
     createMobileNotificationForAdmin({
       type: "create_entry",
-      message: "Mobile Receipt voucher queued for Tally sync",
-      adminId
+      message: `Receipt | ₹${amountReceived} | ${party_name || "-"} | queued for Tally sync`,
+      adminId,
+      meta: {
+        voucher_guid,
+        company_guid,
+        voucher_type: "Receipt",
+        reference_no: generatedReferenceNo,
+        voucher_date,
+        party_name: party_name || null,
+        amount: amountReceived
+      }
     }).catch((e) => console.error("mobile create_entry notify error:", e.message));
 
     // -----------------------------------------
@@ -779,8 +797,17 @@ router.post("/payment/create", requireAuth, async (req, res) => {
 
     createMobileNotificationForAdmin({
       type: "create_entry",
-      message: "Mobile Payment voucher queued for Tally sync",
-      adminId
+      message: `Payment | ₹${amountPaid} | ${party_name || "-"} | queued for Tally sync`,
+      adminId,
+      meta: {
+        voucher_guid,
+        company_guid,
+        voucher_type: "Payment",
+        reference_no: generatedReferenceNo,
+        voucher_date,
+        party_name: party_name || null,
+        amount: amountPaid
+      }
     }).catch((e) => console.error("mobile create_entry notify error:", e.message));
 
     // -----------------------------------------
@@ -1091,10 +1118,21 @@ router.post("/journal/create", requireAuth, async (req, res) => {
       user_id: adminId
     });
 
+    const journalParty = ledger_entries[0]?.ledger_name || null;
+
     createMobileNotificationForAdmin({
       type: "create_entry",
-      message: "Mobile Journal voucher queued for Tally sync",
-      adminId
+      message: `Journal | ₹${totalDebit} | ${journalParty || "-"} | queued for Tally sync`,
+      adminId,
+      meta: {
+        voucher_guid,
+        company_guid,
+        voucher_type: "Journal",
+        reference_no: generatedReferenceNo,
+        voucher_date,
+        party_name: journalParty,
+        amount: totalDebit
+      }
     }).catch((e) => console.error("mobile create_entry notify error:", e.message));
 
     // -----------------------------------------
