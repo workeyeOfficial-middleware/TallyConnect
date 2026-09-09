@@ -1,6 +1,7 @@
 import express from "express";
 import pool from "../db.js";
 import requireAuth from "../middleware/requireAuth.js";
+import { createMobileNotificationForAdmin } from "../utils/mobileNotification.js";
 
 const router = express.Router();
 
@@ -36,6 +37,12 @@ DO UPDATE SET
       `,
       [adminId, company_guid]
     );
+
+    createMobileNotificationForAdmin({
+      type: "sync_completed",
+      message: "Tally sync completed successfully",
+      adminId,
+    }).catch((e) => console.error("mobile sync_completed notify error:", e.message));
 
     res.json({ success: true });
   } catch (err) {

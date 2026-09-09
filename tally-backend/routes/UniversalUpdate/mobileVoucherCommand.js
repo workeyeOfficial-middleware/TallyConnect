@@ -2,6 +2,7 @@ import express from "express";
 import pool from "../../db.js";
 import requireAuth from "../../middleware/requireAuth.js";
 import { createNotification } from "../../utils/notification.js";
+import { createMobileNotificationForAdmin } from "../../utils/mobileNotification.js";
 import crypto from "crypto";
 
 const router = express.Router();
@@ -223,6 +224,12 @@ due_date: due_date || null,
       message: `Mobile ${voucher_type} voucher queued successfully`,
       user_id: adminId
     });
+
+    createMobileNotificationForAdmin({
+      type: "create_entry",
+      message: `Mobile ${voucher_type} voucher queued for Tally sync`,
+      adminId
+    }).catch((e) => console.error("mobile create_entry notify error:", e.message));
 
     return res.json({
       success: true,
@@ -500,6 +507,12 @@ const deposit_account =
       user_id: adminId
     });
 
+    createMobileNotificationForAdmin({
+      type: "create_entry",
+      message: "Mobile Receipt voucher queued for Tally sync",
+      adminId
+    }).catch((e) => console.error("mobile create_entry notify error:", e.message));
+
     // -----------------------------------------
     // RESPONSE
     // -----------------------------------------
@@ -763,6 +776,12 @@ router.post("/payment/create", requireAuth, async (req, res) => {
         "Mobile Payment voucher queued successfully",
       user_id: adminId
     });
+
+    createMobileNotificationForAdmin({
+      type: "create_entry",
+      message: "Mobile Payment voucher queued for Tally sync",
+      adminId
+    }).catch((e) => console.error("mobile create_entry notify error:", e.message));
 
     // -----------------------------------------
     // RESPONSE
@@ -1071,6 +1090,12 @@ router.post("/journal/create", requireAuth, async (req, res) => {
         "Mobile Journal voucher queued successfully",
       user_id: adminId
     });
+
+    createMobileNotificationForAdmin({
+      type: "create_entry",
+      message: "Mobile Journal voucher queued for Tally sync",
+      adminId
+    }).catch((e) => console.error("mobile create_entry notify error:", e.message));
 
     // -----------------------------------------
     // RESPONSE

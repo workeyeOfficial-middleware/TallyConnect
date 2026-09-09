@@ -37,6 +37,7 @@ import invoiceItemBulkRoutes from "./routes/invoiceItem.bulk.js";
 import voucherCommandRoutes from "./routes/UniversalUpdate/voucherCommand.js";
 import syncQueueRoutes from "./routes/syncQueueRoutes.js";
 import adminNotificationsRoutes from "./routes/adminNotifications.js";
+import mobileNotificationsRoutes from "./routes/mobileNotifications.js";
 import sendInviteRouter from "./routes/sendInvite.js";
 import notifyPermissionUpdate from "./routes/notifypermissionupdate.js";
 import userRequestsRouter from "./routes/userRequestsforAccess.js";
@@ -136,6 +137,7 @@ app.use("/notify-permission-update", notifyPermissionUpdate);
 app.use("/", requireAuth, userRequestsRouter);
 app.use("/api/mobile-voucher-command", mobileVoucherCommand);
 app.use("/api/mobile-sync-queue", mobileSyncQueueRoutes);
+app.use("/api/mobile/notifications", requireAuth, mobileNotificationsRoutes);
 app.use("/ledger-items", ledgerItemRoutes);
 
 app.use(

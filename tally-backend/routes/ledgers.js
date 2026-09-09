@@ -2,6 +2,7 @@ import express from "express";
 import pool from "../db.js";
 import requireAuth from "../middleware/requireAuth.js";
 import requireAdmin from "../middleware/requireAdmin.js";
+import { createMobileNotificationForAdmin } from "../utils/mobileNotification.js";
 
 const router = express.Router();
 
@@ -100,6 +101,13 @@ if (ownershipCheck.rowCount === 0) {
 
 
     
+
+    const isParty = /party|sundry|creditor|debtor|customer|supplier/i.test(type || "");
+    createMobileNotificationForAdmin({
+      type: isParty ? "party_sync" : "ledger_sync",
+      message: `${isParty ? "New party synced" : "New ledger synced"}: ${name}`,
+      adminId,
+    }).catch((e) => console.error("mobile ledger sync notify error:", e.message));
 
     res.json({ success: true, data: result.rows[0] });
   } catch (err) {

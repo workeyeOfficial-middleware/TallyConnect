@@ -1,6 +1,7 @@
 import express from "express";
 import pool from "../db.js";
 import requireAuth from "../middleware/requireAuth.js";
+import { createMobileNotificationForAdmin } from "../utils/mobileNotification.js";
 
 const router = express.Router();
 
@@ -177,6 +178,12 @@ await client.query(
     }
 
     await client.query("COMMIT");
+    createMobileNotificationForAdmin({
+      type: "voucher_sync",
+      message: `${voucher_type} voucher synced from Tally`,
+      adminId,
+    }).catch((e) => console.error("mobile voucher_sync notify error:", e.message));
+
     res.json({ success: true });
 
   } catch (err) {

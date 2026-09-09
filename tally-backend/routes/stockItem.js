@@ -1,6 +1,7 @@
 import express from "express";
 import pool from "../db.js";
 import requireAuth from "../middleware/requireAuth.js";
+import { createMobileNotificationForAdmin } from "../utils/mobileNotification.js";
 
 const router = express.Router();
 
@@ -46,6 +47,12 @@ router.post("/sync", requireAuth, async (req, res) => {
       opening_value || 0,
     ]
   );
+
+  createMobileNotificationForAdmin({
+    type: "item_sync",
+    message: `New item synced: ${name}`,
+    adminId,
+  }).catch((e) => console.error("mobile item_sync notify error:", e.message));
 
   res.json({ success: true });
 });

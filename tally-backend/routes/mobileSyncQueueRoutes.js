@@ -1,6 +1,7 @@
 import express from "express";
 import pool from "../db.js";
 import requireAuth from "../middleware/requireAuth.js";
+import { createMobileNotificationForAdmin } from "../utils/mobileNotification.js";
 
 const router = express.Router();
 
@@ -119,19 +120,29 @@ router.post("/:id/success", requireAuth, async (req, res) => {
 router.post("/:id/failed", requireAuth, async (req, res) => {
   const { error } = req.body;
 
-  await pool.query(
+  const result = await pool.query(
     `
     UPDATE mobile_sync_queue
     SET
       status = 'failed',
       error = $2
     WHERE id = $1
+    RETURNING admin_id, entity_type, error
     `,
     [
       req.params.id,
       error || "Unknown error"
     ]
   );
+
+  const failed = result.rows[0];
+  if (failed) {
+    createMobileNotificationForAdmin({
+      type: "entry_failed",
+      message: `Mobile ${failed.entity_type || "entry"} sync failed: ${failed.error || "Unknown error"}`,
+      adminId: failed.admin_id,
+    }).catch((e) => console.error("mobile entry_failed notify error:", e.message));
+  }
 
   res.json({ success: true });
 });
