@@ -180,8 +180,17 @@ await client.query(
     await client.query("COMMIT");
     createMobileNotificationForAdmin({
       type: "voucher_sync",
-      message: `${voucher_type} voucher synced from Tally`,
+      message: `${voucher_type} | ₹${Number(net_amount || 0)} | ${party_name || "-"} | synced from Tally`,
       adminId,
+      meta: {
+        voucher_guid,
+        company_guid,
+        voucher_type,
+        reference_no,
+        voucher_date,
+        party_name: party_name || null,
+        amount: Number(net_amount || 0)
+      }
     }).catch((e) => console.error("mobile voucher_sync notify error:", e.message));
 
     res.json({ success: true });
