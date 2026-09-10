@@ -223,7 +223,7 @@ router.get("/selected", async (req, res) => {
 
   const result = await pool.query(
     `
-    SELECT c.company_guid, c.name
+    SELECT c.company_guid, c.name, sc.starting_from
     FROM selected_companies sc
     JOIN companies c 
       ON c.company_guid = sc.company_guid
@@ -417,5 +417,106 @@ router.get("/by-guid/:guid", requireAuth, async (req, res) => {
 });
 
 
+
+/* =========================================================
+   SYNC START — ENSURE COLUMN EXISTS (AUTO-MIGRATE)
+========================================================= */
+async function ensureSyncStartColumn() {
+  try {
+    await pool.query(`
+      ALTER TABLE selected_companies
+      ADD COLUMN IF NOT EXISTS starting_from VARCHAR(10) DEFAULT NULL
+    `);
+  } catch (err) {
+    console.error("Failed to ensure starting_from column:", err.message);
+  }
+}
+ensureSyncStartColumn();
+
+/* =========================================================
+   GET SYNC START DATE FOR A COMPANY
+========================================================= */
+router.get("/sync-start/:guid", async (req, res) => {
+  const { guid } = req.params;
+  const adminId = req.user.adminId;
+
+  try {
+    const result = await pool.query(
+      `
+      SELECT starting_from
+      FROM selected_companies
+      WHERE admin_id = $1 AND company_guid = $2
+      `,
+      [adminId, guid]
+    );
+
+    if (result.rowCount === 0) {
+      return res.json({
+        success: true,
+        company_guid: guid,
+        starting_from: null,
+      });
+    }
+
+    return res.json({
+      success: true,
+      company_guid: guid,
+      starting_from: result.rows[0].starting_from || null,
+    });
+  } catch (err) {
+    console.error("Get sync start error:", err.message);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+/* =========================================================
+   SET / UPDATE SYNC START DATE FOR A COMPANY (ADMIN ONLY)
+========================================================= */
+router.put("/sync-start/:guid", async (req, res) => {
+  const { guid } = req.params;
+  const { starting_from } = req.body;
+  const adminId = req.user.adminId;
+
+  if (req.user.role !== "ADMIN") {
+    return res.status(403).json({ success: false, message: "Admin only" });
+  }
+
+  if (!starting_from) {
+    return res.status(400).json({ success: false, message: "starting_from is required (YYYY-MM-01)" });
+  }
+
+  const dateRegex = /^\d{4}-\d{2}-01$/;
+  if (!dateRegex.test(starting_from)) {
+    return res.status(400).json({ success: false, message: "Invalid date format. Use YYYY-MM-01" });
+  }
+
+  try {
+    const existing = await pool.query(
+      `SELECT 1 FROM selected_companies WHERE admin_id = $1 AND company_guid = $2`,
+      [adminId, guid]
+    );
+
+    if (existing.rowCount === 0) {
+      await pool.query(
+        `INSERT INTO selected_companies (admin_id, company_guid, starting_from) VALUES ($1, $2, $3)`,
+        [adminId, guid, starting_from]
+      );
+    } else {
+      await pool.query(
+        `UPDATE selected_companies SET starting_from = $1 WHERE admin_id = $2 AND company_guid = $3`,
+        [starting_from, adminId, guid]
+      );
+    }
+
+    return res.json({
+      success: true,
+      company_guid: guid,
+      starting_from,
+    });
+  } catch (err) {
+    console.error("Set sync start error:", err.message);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+});
 
 export default router;
