@@ -277,7 +277,7 @@ router.post("/login", async (req, res) => {
 // 🧪 TEMPORARY LOCAL TEST BYPASS
 // REMOVE THIS BLOCK AFTER TESTING
 // =====================================
-const TEST_AUTH_BYPASS = true;
+const TEST_AUTH_BYPASS = false;
 
 if (TEST_AUTH_BYPASS) {
   const result = await pool.query(
