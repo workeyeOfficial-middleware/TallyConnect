@@ -366,6 +366,14 @@ if (TEST_AUTH_BYPASS) {
       let user;
 
       if (result.rowCount === 0) {
+        // Fix out-of-sync users_id_seq -> duplicate key on users_pkey
+        await pool.query(
+          `SELECT setval(
+             pg_get_serial_sequence('users', 'id'),
+             (SELECT COALESCE(MAX(id), 1) + 1 FROM users)
+           )`
+        );
+
         const insert = await pool.query(
           `INSERT INTO users (email, username, password, role)
            VALUES ($1,$2,$3,'ADMIN')
