@@ -277,74 +277,53 @@ router.get("/", requireAuth, async (req, res) => {
     let params;
 
     if (role === "ADMIN") {
-     query = `
+      query = `
 SELECT
   v.voucher_guid,
-  v.company_guid, 
+  v.company_guid,
   v.voucher_date,
   v.voucher_type,
   v.reference_no,
   v.net_amount AS amount,
   v.is_active,
-  COALESCE(NULLIF(v.party_name,''), MAX(CASE WHEN ve.is_debit = false THEN ve.ledger_name END)) AS party_name
+  v.party_name
 FROM vouchers v
-LEFT JOIN voucher_entries ve
-  ON ve.voucher_guid = v.voucher_guid
- AND ve.admin_id = v.admin_id
- AND ve.company_guid = v.company_guid
 WHERE v.admin_id = $1
   AND v.company_guid = (
     SELECT company_guid
     FROM active_company
     WHERE admin_id = $1
   )
-GROUP BY 
+ORDER BY v.voucher_date DESC
+`;
+      params = [adminId];
+    } else {
+      query = `
+SELECT
   v.voucher_guid,
-  v.company_guid,  
+  v.company_guid,
   v.voucher_date,
   v.voucher_type,
   v.reference_no,
-  v.party_name,
-  v.net_amount,
-  v.is_active
+  v.net_amount AS amount,
+  v.is_active,
+  v.party_name
+FROM vouchers v
+JOIN users u ON u.id = $1
+WHERE v.admin_id = u.admin_id
+  AND v.company_guid = (
+    SELECT company_guid
+    FROM active_company
+    WHERE admin_id = u.admin_id
+  )
+  AND v.voucher_guid = ANY (
+    SELECT jsonb_array_elements_text(
+      u.voucher_selection_permissions->'allowed_vouchers'
+    )
+  )
 ORDER BY v.voucher_date DESC
 `;
-params = [adminId];
-
-
-    } else {
-      query = `
-  SELECT
-    ve.voucher_guid,
-    ve.voucher_date,
-    ve.voucher_type,
-    MAX(ve.reference_no) AS reference_no,
-
-    -- PARTY LEDGER
-    MAX(CASE WHEN ve.is_debit = false THEN ve.ledger_name END) AS party_name,
-
-    -- ✅ PARTY AMOUNT (FIXED)
-    MAX(CASE WHEN ve.is_debit = false THEN ve.amount END) AS amount,
-
-    BOOL_OR(ve.is_active) AS is_active
-  FROM voucher_entries ve
-  JOIN users u ON u.id = $1
-  WHERE ve.admin_id = u.admin_id
-    AND ve.company_guid = (
-      SELECT company_guid
-      FROM active_company
-      WHERE admin_id = u.admin_id
-    )
-    AND ve.voucher_guid = ANY (
-      SELECT jsonb_array_elements_text(
-        u.voucher_selection_permissions->'allowed_vouchers'
-      )
-    )
-  GROUP BY ve.voucher_guid, ve.company_guid, ve.voucher_date, ve.voucher_type
-  ORDER BY ve.voucher_date DESC
-`;
-params = [userId];
-
+      params = [userId];
     }
 
     const result = await pool.query(query, params);
@@ -352,6 +331,26 @@ params = [userId];
 
     if (rows.length > 0) {
       const voucherGuids = rows.map((r) => r.voucher_guid);
+
+      /* party_name fallback */
+      const partyRes = await pool.query(
+        `
+        SELECT
+          ve.voucher_guid,
+          MAX(CASE WHEN ve.is_debit = false THEN ve.ledger_name END) AS party_name
+        FROM voucher_entries ve
+        WHERE ve.admin_id = $1
+          AND ve.voucher_guid = ANY($2)
+        GROUP BY ve.voucher_guid
+        `,
+        [adminId, voucherGuids]
+      );
+      const partyMap = new Map(partyRes.rows.map((p) => [p.voucher_guid, p.party_name]));
+      for (const r of rows) {
+        if (!r.party_name) r.party_name = partyMap.get(r.voucher_guid) ?? null;
+      }
+
+      /* items batch */
       const itemRes = await pool.query(
         `
         SELECT voucher_guid, item_name, quantity, rate, amount
