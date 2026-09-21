@@ -2,14 +2,14 @@ import cron from "node-cron";
 import pool from "../db.js";
 import { generateMonthlyReport } from "../utils/generateMonthlyReport.js";
 
-cron.schedule("* * * * *", async () => {
-  const now = new Date();
+let reportRunning = false;
 
-  // ✅ ALWAYS compare in UTC
+cron.schedule("* * * * *", async () => {
+  if (reportRunning) return;
+
+  const now = new Date();
   const day = now.getUTCDate();
   const time = now.toISOString().slice(11, 16); // HH:mm (UTC)
-
-  console.log("[MONTHLY REPORT CRON]", { day, time });
 
   const { rows } = await pool.query(
     `
@@ -23,7 +23,17 @@ cron.schedule("* * * * *", async () => {
     [day, time]
   );
 
-  for (const row of rows) {
-    await generateMonthlyReport(row.user_id, row.admin_id);
+  if (rows.length === 0) return;
+
+  reportRunning = true;
+  try {
+    console.log("[MONTHLY REPORT CRON] running", { day, time, users: rows.length });
+    for (const row of rows) {
+      await generateMonthlyReport(row.user_id, row.admin_id);
+    }
+  } catch (err) {
+    console.error("[MONTHLY REPORT CRON] error:", err.message);
+  } finally {
+    reportRunning = false;
   }
 });

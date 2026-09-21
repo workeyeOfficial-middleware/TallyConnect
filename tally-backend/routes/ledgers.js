@@ -121,11 +121,7 @@ if (ownershipCheck.rowCount === 0) {
 ===================================================== */
 router.get("/", requireAuth, async (req, res) => {
   try {
-  const userId = req.user.id;
-
-  //const userId = req.user.userId; // users.id
-
-    
+    const userId = req.user.id;
     const adminId = req.user.adminId;
     const role = req.user.role;
 
@@ -134,104 +130,83 @@ router.get("/", requireAuth, async (req, res) => {
 
     // ✅ ADMIN: all ledgers of active company
     if (role === "ADMIN") {
-query = `
-  SELECT
-    l.ledger_guid,
-    l.name,
-    l.email,
-    l.phone,
-    l.parent_group,
-    l.type,
-    l.opening_balance,
-    l.closing_balance, -- ✅ TRUST TALLY
-
-    MAX(ve.voucher_date) AS date,
-    MAX(ve.voucher_type) AS voucher_type,
-    MAX(ve.reference_no) AS reference_no
-
-  FROM ledgers l
-  LEFT JOIN voucher_entries ve
-    ON ve.ledger_name = l.name
-   AND ve.company_guid = l.company_guid
-   AND ve.is_active = true
-
-  WHERE l.admin_id = $1
-AND EXISTS (
-  SELECT 1
-  FROM active_company ac
-  WHERE ac.admin_id = $1
-    AND ac.company_guid = l.company_guid
-)
-
-
-  GROUP BY
-    l.ledger_guid,
-    l.name,
-    l.email,
-    l.phone,
-    l.parent_group,
-    l.type,
-    l.opening_balance,
-    l.closing_balance
-
-  ORDER BY l.name ASC
-`;
-params = [adminId];
-
+      query = `
+        SELECT
+          l.ledger_guid,
+          l.name,
+          l.email,
+          l.phone,
+          l.parent_group,
+          l.type,
+          l.opening_balance,
+          l.closing_balance
+        FROM ledgers l
+        WHERE l.admin_id = $1
+          AND EXISTS (
+            SELECT 1 FROM active_company ac
+            WHERE ac.admin_id = $1 AND ac.company_guid = l.company_guid
+          )
+        ORDER BY l.name ASC
+      `;
+      params = [adminId];
     }
 
     // ✅ USER: permission-based ledgers
     else {
-     query = `
-  SELECT
-    l.ledger_guid,
-    l.name,
-    l.parent_group,
-    l.type,
-    l.opening_balance,
-    l.closing_balance, -- ✅ TRUST TALLY
-
-    MAX(ve.voucher_date) AS date,
-    MAX(ve.voucher_type) AS voucher_type,
-    MAX(ve.reference_no) AS reference_no
-
-  FROM ledgers l
-  LEFT JOIN voucher_entries ve
-    ON ve.ledger_name = l.name
-   AND ve.company_guid = l.company_guid
-   AND ve.is_active = true
-
- WHERE l.admin_id = $2
-AND EXISTS (
-  SELECT 1
-  FROM active_company ac
-  WHERE ac.admin_id = $2
-    AND ac.company_guid = l.company_guid
-)
-AND EXISTS (
-  SELECT 1
-  FROM user_ledger_permissions ulp
-  WHERE ulp.user_id = $1
-    AND ulp.ledger_guid = l.ledger_guid
-)
-
-
-  GROUP BY
-    l.ledger_guid,
-    l.name,
-    l.parent_group,
-    l.type,
-    l.opening_balance,
-    l.closing_balance
-
-  ORDER BY l.name ASC
-`;
-params = [userId, adminId];
-
+      query = `
+        SELECT
+          l.ledger_guid,
+          l.name,
+          l.parent_group,
+          l.type,
+          l.opening_balance,
+          l.closing_balance
+        FROM ledgers l
+        WHERE l.admin_id = $2
+          AND EXISTS (
+            SELECT 1 FROM active_company ac
+            WHERE ac.admin_id = $2 AND ac.company_guid = l.company_guid
+          )
+          AND EXISTS (
+            SELECT 1 FROM user_ledger_permissions ulp
+            WHERE ulp.user_id = $1 AND ulp.ledger_guid = l.ledger_guid
+          )
+        ORDER BY l.name ASC
+      `;
+      params = [userId, adminId];
     }
 
-    const result = await pool.query(query, params);
-    res.json({ success: true, data: result.rows });
+    const ledgersResult = await pool.query(query, params);
+    const rows = ledgersResult.rows;
+
+    if (rows.length > 0) {
+      const aggResult = await pool.query(
+        `
+        SELECT
+          ve.ledger_name AS name,
+          MAX(ve.voucher_date) AS date,
+          MAX(ve.voucher_type) AS voucher_type,
+          MAX(ve.reference_no) AS reference_no
+        FROM voucher_entries ve
+        WHERE ve.admin_id = $1
+          AND ve.company_guid = (
+            SELECT ac.company_guid FROM active_company ac WHERE ac.admin_id = $1
+          )
+          AND ve.is_active = true
+        GROUP BY ve.ledger_name
+        `,
+        [adminId]
+      );
+      const aggMap = new Map(aggResult.rows.map((r) => [r.name, r]));
+      for (const row of rows) {
+        const a = aggMap.get(row.name);
+        row.date = a?.date ?? null;
+        row.voucher_type = a?.voucher_type ?? null;
+        row.reference_no = a?.reference_no ?? null;
+      }
+    }
+
+    res.json({ success: true, data: rows });
   } catch (err) {
     console.error("Ledger fetch error:", err);
     res.status(500).json({ success: false });

@@ -286,24 +286,7 @@ SELECT
   v.reference_no,
   v.net_amount AS amount,
   v.is_active,
-  COALESCE(NULLIF(v.party_name,''), MAX(CASE WHEN ve.is_debit = false THEN ve.ledger_name END)) AS party_name,
-  COALESCE(
-    (
-      SELECT jsonb_agg(
-        jsonb_build_object(
-          'item_name', li.item_name,
-          'quantity', li.quantity,
-          'rate', li.rate,
-          'amount', li.amount
-        )
-      )
-      FROM ledger_items li
-      WHERE li.voucher_guid = v.voucher_guid
-        AND li.company_guid = v.company_guid
-        AND li.admin_id = $1
-    ),
-    '[]'
-  ) AS items
+  COALESCE(NULLIF(v.party_name,''), MAX(CASE WHEN ve.is_debit = false THEN ve.ledger_name END)) AS party_name
 FROM vouchers v
 LEFT JOIN voucher_entries ve
   ON ve.voucher_guid = v.voucher_guid
@@ -343,25 +326,7 @@ params = [adminId];
     -- ✅ PARTY AMOUNT (FIXED)
     MAX(CASE WHEN ve.is_debit = false THEN ve.amount END) AS amount,
 
-    BOOL_OR(ve.is_active) AS is_active,
-
-    COALESCE(
-      (
-        SELECT jsonb_agg(
-          jsonb_build_object(
-            'item_name', li.item_name,
-            'quantity', li.quantity,
-            'rate', li.rate,
-            'amount', li.amount
-          )
-        )
-        FROM ledger_items li
-        WHERE li.voucher_guid = ve.voucher_guid
-          AND li.company_guid = ve.company_guid
-          AND li.admin_id = u.admin_id
-      ),
-      '[]'
-    ) AS items
+    BOOL_OR(ve.is_active) AS is_active
   FROM voucher_entries ve
   JOIN users u ON u.id = $1
   WHERE ve.admin_id = u.admin_id
@@ -383,7 +348,33 @@ params = [userId];
     }
 
     const result = await pool.query(query, params);
-    res.json({ success: true, data: result.rows });
+    const rows = result.rows;
+
+    if (rows.length > 0) {
+      const voucherGuids = rows.map((r) => r.voucher_guid);
+      const itemRes = await pool.query(
+        `
+        SELECT voucher_guid, item_name, quantity, rate, amount
+        FROM ledger_items
+        WHERE admin_id = $1
+          AND voucher_guid = ANY($2)
+        `,
+        [adminId, voucherGuids]
+      );
+      const itemMap = new Map();
+      for (const it of itemRes.rows) {
+        if (!itemMap.has(it.voucher_guid)) itemMap.set(it.voucher_guid, []);
+        itemMap.get(it.voucher_guid).push({
+          item_name: it.item_name,
+          quantity: it.quantity,
+          rate: it.rate,
+          amount: it.amount
+        });
+      }
+      for (const r of rows) r.items = itemMap.get(r.voucher_guid) ?? [];
+    }
+
+    res.json({ success: true, data: rows });
   } catch (err) {
     console.error("Voucher GET error:", err);
     res.status(500).json({ success: false });
