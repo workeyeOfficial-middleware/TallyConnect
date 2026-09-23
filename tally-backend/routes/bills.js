@@ -388,13 +388,14 @@ router.get("/ledger/:ledgerGuid", requireAuth, async (req, res) => {
     );
     const companyGuid = companyRes.rows[0]?.company_guid || null;
 
-    const { rows } = await pool.query(
+const { rows } = await pool.query(
       `
-      SELECT bill_name, ledger_name, due_date, pending_amount
+      SELECT bill_name, ledger_name, bill_date, due_date, pending_amount, bill_type
       FROM bills
       WHERE ledger_guid = $1
         AND admin_id = $2
         AND company_guid = $3
+        AND pending_amount > 0
       ORDER BY due_date ASC
       `,
       [ledgerGuid, adminId, companyGuid]
