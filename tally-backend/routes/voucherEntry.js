@@ -381,6 +381,200 @@ ORDER BY v.voucher_date DESC
 });
 
 /* =====================================================
+   GET VOUCHERS PAGED (UI - fast list / infinite scroll)
+   IMPORTANT: registered BEFORE the /:voucherGuid route
+===================================================== */
+router.get("/paged", requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const role = req.user.role;
+    const adminId = req.user.adminId;
+
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50));
+    const offset = (page - 1) * limit;
+
+    const type = req.query.type?.trim();
+    const search = req.query.search?.trim();
+
+    const parsedYear = parseInt(req.query.year, 10);
+    const year = Number.isNaN(parsedYear) ? null : parsedYear;
+
+    const parsedMonth = parseInt(req.query.month, 10);
+    const month = Number.isNaN(parsedMonth) ? null : parsedMonth;
+
+    const orderByMap = {
+      date_desc: "v.voucher_date DESC, v.voucher_guid DESC",
+      date_asc: "v.voucher_date ASC, v.voucher_guid ASC",
+      amount_desc: "COALESCE(v.net_amount, 0) DESC, v.voucher_date DESC",
+      amount_asc: "COALESCE(v.net_amount, 0) ASC, v.voucher_date DESC"
+    };
+    const orderBySql = orderByMap[req.query.sort_by] || orderByMap.date_desc;
+
+    const params = [];
+    if (role === "ADMIN") params.push(adminId);
+    else params.push(userId);
+    const baseParamCount = params.length;
+
+    const baseClauses = [];
+    const filterClauses = [];
+
+    if (role === "ADMIN") {
+      baseClauses.push("v.admin_id = $1");
+      baseClauses.push(
+        "v.company_guid = (SELECT company_guid FROM active_company WHERE admin_id = $1)"
+      );
+    } else {
+      baseClauses.push("v.admin_id = u.admin_id");
+      baseClauses.push(
+        "v.company_guid = (SELECT company_guid FROM active_company WHERE admin_id = u.admin_id)"
+      );
+      baseClauses.push(
+        "v.voucher_guid = ANY (SELECT jsonb_array_elements_text(u.voucher_selection_permissions->'allowed_vouchers'))"
+      );
+    }
+
+    if (type) {
+      params.push(type);
+      filterClauses.push(`v.voucher_type ILIKE '%' || $${params.length} || '%'`);
+    }
+    if (search) {
+      params.push(search);
+      const i = params.length;
+      filterClauses.push(
+        `(v.party_name ILIKE '%' || $${i} || '%' ` +
+          `OR v.reference_no ILIKE '%' || $${i} || '%' ` +
+          `OR v.voucher_type ILIKE '%' || $${i} || '%' ` +
+          `OR v.voucher_date::text ILIKE '%' || $${i} || '%')`
+      );
+    }
+    if (year) {
+      params.push(year);
+      filterClauses.push(`EXTRACT(YEAR FROM v.voucher_date) = $${params.length}`);
+    }
+    if (month) {
+      params.push(month);
+      filterClauses.push(`EXTRACT(MONTH FROM v.voucher_date) = $${params.length}`);
+    }
+
+    const joinSql = role === "ADMIN" ? "" : "JOIN users u ON u.id = $1";
+    const allClauses = [...baseClauses, ...filterClauses];
+    const whereSql = allClauses.length ? `WHERE ${allClauses.join(" AND ")}` : "";
+    const baseWhereSql = `WHERE ${baseClauses.join(" AND ")}`;
+
+    const countRes = await pool.query(
+      `SELECT COUNT(*)::int AS total FROM vouchers v ${joinSql} ${whereSql}`,
+      params
+    );
+    const total = countRes.rows[0]?.total ?? 0;
+
+    const sumRes = await pool.query(
+      `SELECT COALESCE(SUM(COALESCE(v.net_amount, 0)), 0) AS total_amount FROM vouchers v ${joinSql} ${whereSql}`,
+      params
+    );
+    const totalAmount = Number(sumRes.rows[0]?.total_amount ?? 0);
+
+    let typesList = [];
+    let yearsList = [];
+    if (total > 0) {
+      const typesRes = await pool.query(
+        `SELECT DISTINCT v.voucher_type AS type
+         FROM vouchers v ${joinSql} ${baseWhereSql}
+           AND v.voucher_type IS NOT NULL AND v.voucher_type <> ''
+         ORDER BY v.voucher_type ASC`,
+        params.slice(0, baseParamCount)
+      );
+      typesList = typesRes.rows.map((r) => r.type);
+
+      const yearsRes = await pool.query(
+        `SELECT DISTINCT EXTRACT(YEAR FROM v.voucher_date)::int AS year
+         FROM vouchers v ${joinSql} ${baseWhereSql}
+           AND v.voucher_date IS NOT NULL
+         ORDER BY year DESC`,
+        params.slice(0, baseParamCount)
+      );
+      yearsList = yearsRes.rows.map((r) => r.year);
+    }
+
+    const rowsRes = await pool.query(
+      `SELECT
+        v.voucher_guid,
+        v.company_guid,
+        v.voucher_date,
+        v.voucher_type,
+        v.reference_no,
+        v.net_amount AS amount,
+        v.is_active,
+        v.party_name
+       FROM vouchers v ${joinSql} ${whereSql}
+       ORDER BY ${orderBySql}
+       LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      [...params, limit, offset]
+    );
+    const rows = rowsRes.rows;
+
+    if (rows.length > 0) {
+      const voucherGuids = rows.map((r) => r.voucher_guid);
+
+      const partyRes = await pool.query(
+        `
+        SELECT
+          ve.voucher_guid,
+          MAX(CASE WHEN ve.is_debit = false THEN ve.ledger_name END) AS party_name
+        FROM voucher_entries ve
+        WHERE ve.admin_id = $1
+          AND ve.voucher_guid = ANY($2)
+        GROUP BY ve.voucher_guid
+        `,
+        [adminId, voucherGuids]
+      );
+      const partyMap = new Map(partyRes.rows.map((p) => [p.voucher_guid, p.party_name]));
+      for (const r of rows) {
+        if (!r.party_name) r.party_name = partyMap.get(r.voucher_guid) ?? null;
+      }
+
+      const itemRes = await pool.query(
+        `
+        SELECT voucher_guid, item_name, quantity, rate, amount
+        FROM ledger_items
+        WHERE admin_id = $1
+          AND voucher_guid = ANY($2)
+        `,
+        [adminId, voucherGuids]
+      );
+      const itemMap = new Map();
+      for (const it of itemRes.rows) {
+        if (!itemMap.has(it.voucher_guid)) itemMap.set(it.voucher_guid, []);
+        itemMap.get(it.voucher_guid).push({
+          item_name: it.item_name,
+          quantity: it.quantity,
+          rate: it.rate,
+          amount: it.amount
+        });
+      }
+      for (const r of rows) r.items = itemMap.get(r.voucher_guid) ?? [];
+    }
+
+    res.json({
+      success: true,
+      data: rows,
+      meta: {
+        total,
+        page,
+        limit,
+        hasMore: offset + rows.length < total,
+        totalAmount,
+        types: typesList,
+        years: yearsList
+      }
+    });
+  } catch (err) {
+    console.error("Voucher paged GET error:", err);
+    res.status(500).json({ success: false });
+  }
+});
+
+/* =====================================================
    DELETE (SOFT DELETE) VOUCHER
 ===================================================== */
 router.delete("/:voucherGuid", requireAuth, async (req, res) => {
